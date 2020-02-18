@@ -71,10 +71,17 @@ class Nutrient(enum.IntEnum):
     Biotin = 1176
     Choline = 1180
 
+    @classmethod
+    def name_series(klass):
+        return pd.Series(
+            dict([(int(v), k) for k, v in klass.__members__.items()]),
+            name='nutrient_name')
 
     @classmethod
-    def reverse(klass):
-        return dict([(int(v), k) for k, v in klass.__members__.items()])
+    def id_series(klass):
+        return pd.Series(
+            dict([(k, int(v)) for k, v in klass.__members__.items()]),
+            name='nutrient_id')
 
 
 # Table 2 NAS report
@@ -182,7 +189,7 @@ def calc_amdr_g(amdr_percent, energy_kcal):
 
 def convert_units(df, units_from, units_to):
     init_len = len(df.dropna())
-    df = pd.concat([df, units_from, units_to], axis=1).dropna()
+    df = pd.concat([df, units_from, units_to], axis=1, sort=True).dropna()
 
     unit_div = {
         'G': 1,
@@ -199,12 +206,9 @@ def convert_units(df, units_from, units_to):
     return df
 
 
-def make_nuts_indices(df):
-    init_len = len(df)
-    a = pd.Series(Nutrient.reverse(), name='names')
-    df = (pd.merge(a, df, left_on='names', right_index=True)
-          .drop(['names'], axis=1))
-    assert len(df) == init_len, "We lost rows"
+def make_nuts_names(df):
+    df = (pd.merge(Nutrient.id_series(), df, left_on='nutrient_id', right_index=True)
+          .drop(['nutrient_id'], axis=1))
     return df
 
 
@@ -214,17 +218,15 @@ def read_elem(age, sex, df, name, nutrient):
 
     by_sex = df[df.Type == sex_str]
     i = cutoff_decision(
-        list(zip(
+        reversed(list(zip(
             map(float, by_sex.Age),
-            by_sex.index)),
-        lambda a: age <= a)
+            by_sex.index))),
+        lambda a: age >= a)
     reqs = by_sex.loc[i].drop(['Type', 'Age'])
-    reqs = make_nuts_indices(reqs)
-
     units_from = df[df.Type == 'Units'].transpose().drop(['Type', 'Age'])
-    units_from = make_nuts_indices(units_from)
 
     units_to = nutrient.set_index('id').unit_name
+    units_to = make_nuts_names(units_to)
 
     df = convert_units(reqs, units_from, units_to)
     df.name = name
@@ -236,7 +238,7 @@ def elements(age, sex, nutrient):
     ul = pd.read_csv("us-tables/elem-ul.csv").drop(
         ['Vanadium', 'Sulfate', 'Silicon'], axis=1)
     ul = read_elem(age, sex, ul, "upper", nutrient)
-    return pd.concat([dri, ul], axis=1)
+    return pd.concat([dri, ul], axis=1, sort=True)
 
 
 def vitamins(age, sex, nutrient):
@@ -244,7 +246,7 @@ def vitamins(age, sex, nutrient):
                     nutrient)
     ul = read_elem(age, sex, pd.read_csv("us-tables/vit-ul.csv"), "upper",
                    nutrient)
-    return pd.concat([dri, ul], axis=1)
+    return pd.concat([dri, ul], axis=1, sort=True)
 
 
 def dietary_requirements(age, sex, weight_kg, height_m, activity_level):
@@ -259,35 +261,44 @@ def dietary_requirements(age, sex, weight_kg, height_m, activity_level):
     df.loc[Nutrient.Energy, "upper"] = energy_kcal * 1.02
 
     # Cholesterol as low as possible
-    df.loc[Nutrient.Cholesterol, "cost"] = 0.01
+    df.loc[Nutrient.Cholesterol, "cost"] = 1
     # Trans fat, saturated fat ALAP
-    df.loc[Nutrient.Trans_fats, "cost"] = 0.2
-    df.loc[Nutrient.Saturated_fats, "cost"] = 0.1
+    df.loc[Nutrient.Trans_fats, "cost"] = 1
+    df.loc[Nutrient.Saturated_fats, "cost"] = 1
     # Added sugars ≤ 25%
 
     # Amend protein lower bound if necessary
     idx = (Nutrient.Protein, "lower")
     df.loc[idx] = max(df.loc[idx], pri_protein(age, sex, weight_kg))
+    df = make_nuts_names(df)
 
     nutrient = pd.read_csv("FoodData_Central_csv_2019-12-17/nutrient.csv.gz")
     elem = elements(age, sex, nutrient)
+
+    # The ULs for magnesium represent intake from a pharmacological agent only
+    # and do not include intake from food and water.
+    elem.loc["Magnesium", "upper"] = None
+
     vit = vitamins(age, sex, nutrient)
+    # Potassium requirements differ from online calculator
+    # So do Vitamin D
+    vit.loc["Vitamin_D", "lower"] *= 3
+
     return pd.concat([df, elem, vit], axis=0, sort=True)
 
 
-
-#if __name__ == '__main__':
-df = dietary_requirements(24, Sex.MALE, 88.8, 1.98, ActivityLevel.MODERATE)
-
+df = dietary_requirements(24, Sex.MALE, 88.0, 1.98, ActivityLevel.MODERATE)
 nutrient = pd.read_csv("FoodData_Central_csv_2019-12-17/nutrient.csv.gz")
+units = make_nuts_names(nutrient.set_index('id').unit_name)
 
-def check_Nutrients():
-    a = pd.Series(Nutrient.reverse(), name='bla')
-    table = pd.merge(nutrient, a, left_on='id', right_index=True)[['id', 'bla', 'name']]
-    print(table)
+pd.concat([units, df], axis=1, join='inner').to_csv("out.csv")
+
+if __name__ == '__main__':
+
+    def check_Nutrients():
+        table = pd.merge(nutrient, Nutrient.name_series(), left_on='id', right_index=True)[['id', 'nutrient_name', 'name']]
+        print(table)
 
 
-with_nutrient = pd.merge(nutrient[['id', 'name']], df, left_on='id', right_index=True)
-a = pd.Series(Nutrient.reverse(), name='names')
-
-print(pd.concat([a, with_nutrient.set_index('id')], axis=1))
+    with_nutrient = pd.merge(nutrient[['id', 'name']], df, left_on='id', right_index=True)
+    # print(pd.concat([Nutrient.name_series(), with_nutrient.set_index('id')], axis=1))
