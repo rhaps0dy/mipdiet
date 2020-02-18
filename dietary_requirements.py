@@ -249,7 +249,7 @@ def vitamins(age, sex, nutrient):
     return pd.concat([dri, ul], axis=1, sort=True)
 
 
-def dietary_requirements(age, sex, weight_kg, height_m, activity_level):
+def dietary_requirements(age, sex, weight_kg, height_m, activity_level, vegetarian=True):
     energy_kcal = eer_kcal(age, sex, weight_kg, height_m, activity_level)
     amdr_percent = calc_amdr_percent(age)
     amdr_g = calc_amdr_g(amdr_percent, energy_kcal)
@@ -278,6 +278,10 @@ def dietary_requirements(age, sex, weight_kg, height_m, activity_level):
     # The ULs for magnesium represent intake from a pharmacological agent only
     # and do not include intake from food and water.
     elem.loc["Magnesium", "upper"] = None
+
+    if vegetarian:
+        elem.loc["Iron", "lower"] *= 1.8
+        elem.loc["Zinc", "lower"] *= 1.5
 
     vit = vitamins(age, sex, nutrient)
     # Potassium requirements differ from online calculator
