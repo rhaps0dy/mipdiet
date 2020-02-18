@@ -28,17 +28,17 @@ class AgeGroup(enum.Enum):
 
 
 class Nutrient(enum.IntEnum):
-    ENERGY = 1008
-    PROTEIN = 1003
-    FAT = 1004
-    CARB = 1005
-    FIBER = 1079
-    LINOLEIC_ACID = 1269
-    A_LINOLEIC_ACID = 1270
-    ALCOHOL = 1018
-    TRANS_FATS = 1257
-    SATURATED_FATS = 1258
-    CHOLESTEROL = 1253
+    Energy = 1008
+    Protein = 1003
+    Fat = 1004
+    Carb = 1005
+    Fiber = 1079
+    Linoleic_Acid = 1269
+    A_Linoleic_Acid = 1270
+    Alcohol = 1018
+    Trans_fats = 1257
+    Saturated_fats = 1258
+    Cholesterol = 1253
     Calcium = 1087
     Chromium = 1096
     Copper = 1098
@@ -54,6 +54,23 @@ class Nutrient(enum.IntEnum):
     Potassium = 1092
     Sodium = 1093
     Chloride = 1088  # Chlorine in nutrient table
+    Boron = 1137
+    Nickel = 1146
+    Vitamin_A = 1106
+    Vitamin_C = 1162
+    Vitamin_D = 1114
+    Vitamin_E = 1158
+    Vitamin_K = 1185  # only phylloquinone, USDA seems to use that
+    Thiamin = 1165
+    Riboflavin = 1166
+    Niacin = 1167
+    Vitamin_B6 = 1175
+    Vitamin_B12 = 1178
+    Folate = 1177
+    Pantothenic_Acid = 1170
+    Biotin = 1176
+    Choline = 1180
+
 
     @classmethod
     def reverse(klass):
@@ -133,19 +150,19 @@ def calc_amdr_percent(age):
         (19, ((25, 35), (10, 30))),
         (np.inf, ((20, 35), (10, 35))),
     ], lambda a: age < a)
-    return {Nutrient.FAT: fat_range,
-            Nutrient.LINOLEIC_ACID: (5, 10),
-            Nutrient.A_LINOLEIC_ACID: (0.6, 1.2),
-            Nutrient.CARB: (45, 65),    # Carbohydrate
-            Nutrient.PROTEIN: protein_range}
+    return {Nutrient.Fat: fat_range,
+            Nutrient.Linoleic_Acid: (5, 10),
+            Nutrient.A_Linoleic_Acid: (0.6, 1.2),
+            Nutrient.Carb: (45, 65),    # Carbohydrate
+            Nutrient.Protein: protein_range}
 
 
 # Table 3 NAS report
 kcal_g_macro = {
-    Nutrient.CARB: 4.,
-    Nutrient.FAT: 9.,
-    Nutrient.PROTEIN: 4.,
-    Nutrient.ALCOHOL: 7.,
+    Nutrient.Carb: 4.,
+    Nutrient.Fat: 9.,
+    Nutrient.Protein: 4.,
+    Nutrient.Alcohol: 7.,
 }
 
 
@@ -153,8 +170,8 @@ def calc_amdr_g(amdr_percent, energy_kcal):
     d = {}
     for k, (percent_lb, percent_ub) in amdr_percent.items():
         k_macro = k
-        if k in [Nutrient.LINOLEIC_ACID, Nutrient.A_LINOLEIC_ACID]:
-            k_macro = Nutrient.FAT
+        if k in [Nutrient.Linoleic_Acid, Nutrient.A_Linoleic_Acid]:
+            k_macro = Nutrient.Fat
 
         macro_g_lb, macro_g_ub = map(
             lambda v: (energy_kcal * v)/(100 * kcal_g_macro[k_macro]),
@@ -163,8 +180,35 @@ def calc_amdr_g(amdr_percent, energy_kcal):
     return d
 
 
-def read_elem(age, sex, path, name):
-    df = pd.read_csv(path)
+def convert_units(df, units_from, units_to):
+    init_len = len(df.dropna())
+    df = pd.concat([df, units_from, units_to], axis=1).dropna()
+
+    unit_div = {
+        'G': 1,
+        'MG': 1000,
+        'MG_ATE': 1000,  # MG α-tocopherol equivalent, vit E
+        'UG': 1000000,
+    }
+    def _convert(_x):
+        v, u_from, u_to = _x
+        return float(v) * unit_div[u_to] / unit_div[u_from]
+
+    df = df.apply(_convert, axis=1, raw=True)
+    assert len(df) == init_len, "We lost rows"
+    return df
+
+
+def make_nuts_indices(df):
+    init_len = len(df)
+    a = pd.Series(Nutrient.reverse(), name='names')
+    df = (pd.merge(a, df, left_on='names', right_index=True)
+          .drop(['names'], axis=1))
+    assert len(df) == init_len, "We lost rows"
+    return df
+
+
+def read_elem(age, sex, df, name, nutrient):
     sex_str = 'Female' if sex == Sex.FEMALE else 'Male'
     df = df.fillna({'Type': sex_str})
 
@@ -175,17 +219,32 @@ def read_elem(age, sex, path, name):
             by_sex.index)),
         lambda a: age <= a)
     reqs = by_sex.loc[i].drop(['Type', 'Age'])
-    reqs.name = name
+    reqs = make_nuts_indices(reqs)
 
-    a = pd.Series(Nutrient.reverse(), name='names')
-    indexed_reqs = pd.merge(a, reqs, left_on='names', right_index=True)
-    assert len(reqs) == len(indexed_reqs), "we lost nutrients"
-    return indexed_reqs[[name]].astype(float)
+    units_from = df[df.Type == 'Units'].transpose().drop(['Type', 'Age'])
+    units_from = make_nuts_indices(units_from)
 
-def elements(age, sex):
-    dri = read_elem(age, sex, "us-tables/elem-dri.csv", "lower")
-    ul = read_elem(age, sex, "us-tables/elem-ul.csv", "upper")
+    units_to = nutrient.set_index('id').unit_name
 
+    df = convert_units(reqs, units_from, units_to)
+    df.name = name
+    return df
+
+def elements(age, sex, nutrient):
+    dri = read_elem(age, sex, pd.read_csv("us-tables/elem-dri.csv"),
+                    "lower", nutrient)
+    ul = pd.read_csv("us-tables/elem-ul.csv").drop(
+        ['Vanadium', 'Sulfate', 'Silicon'], axis=1)
+    ul = read_elem(age, sex, ul, "upper", nutrient)
+    return pd.concat([dri, ul], axis=1)
+
+
+def vitamins(age, sex, nutrient):
+    dri = read_elem(age, sex, pd.read_csv("us-tables/vit-dri.csv"), "lower",
+                    nutrient)
+    ul = read_elem(age, sex, pd.read_csv("us-tables/vit-ul.csv"), "upper",
+                   nutrient)
+    return pd.concat([dri, ul], axis=1)
 
 
 def dietary_requirements(age, sex, weight_kg, height_m, activity_level):
@@ -194,23 +253,26 @@ def dietary_requirements(age, sex, weight_kg, height_m, activity_level):
     amdr_g = calc_amdr_g(amdr_percent, energy_kcal)
     df = pd.DataFrame.from_dict(amdr_g, orient='index', columns=('lower', 'upper'))
 
-    df.loc[Nutrient.FIBER, "lower"] = 14 * energy_kcal / 1000
+    df.loc[Nutrient.Fiber, "lower"] = 14 * energy_kcal / 1000
 
-    df.loc[Nutrient.ENERGY, "lower"] = energy_kcal * 0.98
-    df.loc[Nutrient.ENERGY, "upper"] = energy_kcal * 1.02
+    df.loc[Nutrient.Energy, "lower"] = energy_kcal * 0.98
+    df.loc[Nutrient.Energy, "upper"] = energy_kcal * 1.02
 
     # Cholesterol as low as possible
-    df.loc[Nutrient.CHOLESTEROL, "cost"] = 0.01
+    df.loc[Nutrient.Cholesterol, "cost"] = 0.01
     # Trans fat, saturated fat ALAP
-    df.loc[Nutrient.TRANS_FATS, "cost"] = 0.2
-    df.loc[Nutrient.SATURATED_FATS, "cost"] = 0.1
+    df.loc[Nutrient.Trans_fats, "cost"] = 0.2
+    df.loc[Nutrient.Saturated_fats, "cost"] = 0.1
     # Added sugars ≤ 25%
 
     # Amend protein lower bound if necessary
-    idx = (Nutrient.PROTEIN, "lower")
+    idx = (Nutrient.Protein, "lower")
     df.loc[idx] = max(df.loc[idx], pri_protein(age, sex, weight_kg))
 
-    return df
+    nutrient = pd.read_csv("FoodData_Central_csv_2019-12-17/nutrient.csv.gz")
+    elem = elements(age, sex, nutrient)
+    vit = vitamins(age, sex, nutrient)
+    return pd.concat([df, elem, vit], axis=0, sort=True)
 
 
 
@@ -225,4 +287,7 @@ def check_Nutrients():
     print(table)
 
 
-print(pd.merge(nutrient[['id', 'name']], df, left_on='id', right_index=True))
+with_nutrient = pd.merge(nutrient[['id', 'name']], df, left_on='id', right_index=True)
+a = pd.Series(Nutrient.reverse(), name='names')
+
+print(pd.concat([a, with_nutrient.set_index('id')], axis=1))

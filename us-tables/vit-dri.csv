@@ -1,4 +1,4 @@
-"Type","Age","Vitamin A (μg/d)","Vitamin C (mg/d)","Vitamin D (μg/d)","Vitamin E (mg/d)","Vitamin K (μg/d)","Thiamin (mg/d)","Riboflavin (mg/d)","Niacin (mg/d) ","Vitamin B6 (mg/d)","Folate (μg/d)","Vitamin B12 (μg/d)","Pantothenic Acid (mg/d)","Biotin (μg/d)","Choline (mg/d)"
+"Type","Age","Vitamin_A","Vitamin_C","Vitamin_D","Vitamin_E","Vitamin_K","Thiamin","Riboflavin","Niacin","Vitamin_B6","Folate","Vitamin_B12","Pantothenic_Acid","Biotin","Choline"
 "","0","400","40","5","4","2.0","0.2","0.3","2","0.1","65","0.4","1.7","5","125"
 "","0.58","500","50","5","5","2.5","0.3","0.4","4","0.3","80","0.5","1.8","6","150"
 "","1","300","15","5","6","30","0.5","0.5","6","0.5","150","0.9","2","8","200"
@@ -21,4 +21,4 @@
 "Lactation","14","1200","115","5","19","75","1.4","1.6","17","2.0","500","2.8","7","35","550"
 "Lactation","19","1300","120","5","19","90","1.4","1.6","17","2.0","500","2.8","7","35","550"
 "Lactation","31","1300","120","5","19","90","1.4","1.6","17","2.0","500","2.8","7","35","550"
-"Unit","Years","UG","MG","UG","MG","UG","MG","MG","MG","MG","UG","UG","MG","UG","MG"
+"Units","Years","UG","MG","UG","MG","UG","MG","MG","MG","MG","UG","UG","MG","UG","MG"
