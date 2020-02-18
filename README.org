@@ -1,0 +1,211 @@
+* Data files and their sources
+** From https://data.nal.usda.gov/dataset/usda-table-nutrient-retention-factors-release-6-2007 
+   - ~NutrientRetention.csv~, contains nutrient retention rates for food groups
+     prepared in different ways. Use only when data for food type and
+     preparation method is not available.
+** Files from download at https://fdc.nal.usda.gov/download-datasets.html 
+   Select "Full Download of All Data Types - December 2019 (CSV – 67M)"
+   
+   - ~nutrient.csv~, nutrient names and IDs
+   - ~food_nutrient.csv~, nutrients present in each food
+   - ~food.csv~, description for each food
+
+* Cleaning the files
+  The least straightforward part is that some nutrients are "duplicated". The
+  list was obtained using the following code:
+  #+BEGIN_SRC python
+  nutrients_to_join = list(filter(
+      lambda g: len(g) > 1,
+      nutrient[['nutrient_nbr']].astype(int)
+      .groupby('nutrient_nbr').groups.values()))
+  for nut in nutrients_to_join:
+      rows = (nutrient[["name", "nutrient_nbr"]].iloc[nut]
+              .to_csv(sep="|").split("\n"))
+      rows.insert(1, "-+-+-")
+      for r in rows:
+          if r != "":
+              print(f"|{r}|")
+      print()
+  #+END_SRC
+  
+** Carbohydrates
+   These are just different methods of obtaining their value. We will *average*
+   the methods.
+   
+   Units: g
+   |   id | name                        | nutrient_nbr |
+   |------+-----------------------------+--------------|
+   | 1005 | Carbohydrate, by difference |        205.0 |
+   | 1050 | Carbohydrate, by summation  |        205.2 |
+   
+** Sugars
+   None of the foods have both kinds of sugar measurement. We will use
+   ~np.nanmean~ out of convenience, but we are just combining the columns.
+   
+   Units: g
+   |   id | name                         | nutrient_nbr |
+   |------+------------------------------+--------------|
+   | 1063 | Sugars, Total NLEA           |        269.3 |
+   | 2000 | Sugars, total including NLEA |        269.0 |
+   
+** Vitamin A (Retinol), α- and β-Carotenes
+   According to [[https://en.wikipedia.org/wiki/Beta-Carotene#Retinol_activity_equivalents_(RAEs)][Wikipedia]], all of these contribute to the total amount of
+   Vitamin A (Retinol) in the food. They have different contribution factors. We
+   also have ~1104: Vitamin A, IU~ expressed in IU, which should take care of
+   the factors already (*I haven't checked*).
+   
+   Units: μg
+   |   id | name                | nutrient_nbr |
+   |------+---------------------+--------------|
+   | 1107 | Carotene, beta      |        321.0 |
+   | 1159 | cis-beta-Carotene   |        321.1 |
+   | 2028 | trans-beta-Carotene |        321.2 |
+   | 1108 | Carotene, alpha     |          322 |
+   | 1105 | Retinol             |          319 |
+   | 1106 | Vitamein A (RAE)    |          320 |
+   | 1104 | Vitamin A (IU)      |          320 |
+   
+** Lycopene
+   [[https://en.wikipedia.org/wiki/Lycopene][Wikipedia]] does not mention any differences in absorption.
+   
+   |   id | name           | nutrient_nbr |
+   |------+----------------+--------------|
+   | 1122 | Lycopene       |        337.0 |
+   | 1160 | cis-Lycopene   |        337.1 |
+   | 2029 | trans-Lycopene |        337.2 |
+   
+** Lutein / Zeaxanthin 
+   |   id | name                  | nutrient_nbr |
+   |------+-----------------------+--------------|
+   | 1119 | Zeaxanthin            |        338.2 |
+   | 1121 | Lutein                |        338.1 |
+   | 1123 | Lutein + zeaxanthin   |        338.0 |
+   | 1161 | cis-Lutein/Zeaxanthin |        338.3 |
+   
+** 22:1
+   Apparently some kind of fat.
+   
+   |   id | name      | nutrient_nbr |
+   |------+-----------+--------------|
+   | 1317 | 22:1 c    |        676.0 |
+   | 2014 | 22:1 n-9  |        676.1 |
+   | 2015 | 22:1 n-11 |        676.2 |
+
+* Adding foods by ID
+  #+BEGIN_SRC elisp
+    (setq test-source (helm-build-sync-source "test"
+                        :candidates '(("Hello World" . "hello-world")
+                                     ("Bye World" . "bye-world"))))
+    (helm :sources '(test-source))
+  #+END_SRC
+
+* Nutrient requirements
+  *Source US government (NAS report): https://www.nap.edu/download/11537*
+  *Source EU government: https://www.efsa.europa.eu/sites/default/files/2017_09_DRVs_summary_report.pdf*
+  
+  Starting on Page 29 are the dietary reference tables. However, more readable
+  quantities can be obtained from the [[https://www.nal.usda.gov/fnic/dri-calculator/index.php][Calculator at the USDA's site.]]
+
+** Macronutrient requirements  
+    Huel Powder is 37:30:30:3 Macro Split
+    
+    Energy requirements in Tables 1 and 2.
+   
+*** Macronutrient/energy conversion ratios
+    Table 3 NAS report
+    
+   | Macronutrient | Kcal/g | Kcal/ml |
+   |---------------+--------+---------|
+   | Carbohydrate  |      4 |         |
+   | Fat           |      9 |         |
+   | Protein       |      4 |         |
+   | Alcohol       |      7 |     5.6 |
+    
+
+** Definitions of Dietary Reference Intakes (DRI) (Copyright National Academy of Sciences)
+   > The DRIs expand upon and replace the RDAs and RNIs with four categories of
+   values intended to help individuals /optimize/ their health, prevent disease,
+   and avoid consuming too much of a nutrient /(emphasis mine)/
+  
+   [[./img/dri-definition.png]]
+   
+*** Box 2 DRI Definitions  
+    - Estimated Average Requirement (EAR): The average daily nutrient intake level
+      that is estimated to meet the requirements of half of the healthy individuals
+      in a particular life stage and gender group.
+    - Recommended Dietary Allowance (RDA): The average daily dietary nutrient intake
+      level that is sufficient to meet the nutrient requirements of nearly all
+      (97–98 percent) healthy individuals in a particular life stage and gender
+      group.
+    - Adequate Intake (AI): The recommended average daily intake level based on
+      observed or experimentally determined approximations or estimates of
+      nutrient intake by a group (or groups) of apparently healthy people that
+      are assumed to be adequate; used when an RDA cannot be determined.
+    - Tolerable Upper Intake Level (UL): The highest average daily nutrient intake
+      level that is likely to pose no risk of adverse health effects to almost all
+      individuals in the general population. As intake increases above the UL, the
+      potential risk of adverse effects may increase.
+
+** Protein requirements  
+   Source: https://www.who.int/nutrition/publications/nutrientrequirements/WHO_TRS_935/en/
+   
+   *From section 7.10:*
+   - Median adult: 0.66 g/(kg day)
+   - 97.5th percentile adult: 0.83 g/(kg day)
+ 
+   *From section 14.2:*
+   > No safe upper limit has been identified, and it is unlikely that intakes of
+   twice the safe level are associated with any risk. However, caution is
+   advised to those contemplating the very high intakes of 3–4 times the safe
+   intake.
+   
+*** Essential amino-acid requirements 
+   
+   *From Section 8 and Table 23:*
+
+   | Amino-acid name          | mg/(kg day) |
+   |--------------------------+-------------|
+   | Histidine                |          10 |
+   | Isoleucine               |          20 |
+   | Leucine                  |          39 |
+   | Lysine                   |          30 |
+   | Methionine               |        10.4 |
+   | Cysteine                 |         4.1 |
+   | Phenynalamine + tyrosine |          25 |
+   | Threonine                |          15 |
+   | Tryptophan               |           4 |
+   | Valine                   |          26 |
+   
+  
+   Looking at Figure 14, the protein profiles of all foods (including potato,
+   rice, maize, soya; except cassava) are very close to the required pattern of
+   amino-acids.
+   
+   [[./img/who-trs-fig14.png]]
+
+*** Safe upper intakes of indispensable amino-acids (24% higher than table above)
+    *From section 8.4 "Safe intakes of indispensable amino acids":*
+    
+    > There is no information on the variability of requirements for individual
+    amino acids. Therefore, approximate values were calculated on the assumption
+    that the inter-individual coefficient of variation of the requirements
+    foramino acids is the same as that for total protein, i.e. 12%. On this
+    basis, thesafe levels of intake for the indispensable amino acids are 24%
+    higher thanthe values for average requirement shown in the first column of
+    Table 23.
+
+** Iron and Zinc requirements
+   > The requirement for iron is 1.8 times higher for vegetarians due to the
+   lower bioavailability of iron from a vegetarian diet.
+
+   > The requirement for zinc may be as much as 50 percent greater for
+     vegetarians, particularly for strict vegetarians whose major food staples
+     are grains and legumes.
+
+* Current Diet
+** sopar 
+  - 1.625kg - .180kg  queden llenties
+  - 2x 700g llenties ahir
+
+** Esmorzar 
+   130g poma
